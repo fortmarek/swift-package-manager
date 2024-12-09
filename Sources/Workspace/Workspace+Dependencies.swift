@@ -12,6 +12,7 @@
 
 import _Concurrency
 
+import Foundation
 import struct Basics.AbsolutePath
 import struct Basics.InternalError
 import class Basics.ObservabilityScope
@@ -419,7 +420,8 @@ extension Workspace {
         }
 
         // Retrieve the required resolved packages.
-        for resolvedPackage in requiredResolvedPackages {
+        let initialTime = Date()
+        await requiredResolvedPackages.concurrentForEach { resolvedPackage in
             await observabilityScope.makeChildScope(
                 description: "retrieving resolved package versions for dependencies",
                 metadata: resolvedPackage.packageRef.diagnosticsMetadata
@@ -442,6 +444,7 @@ extension Workspace {
                 }
             }
         }
+        print("It took \(Date().timeIntervalSince1970 - initialTime.timeIntervalSince1970) to resolve dependencies")
 
         let currentManifests = try await self.loadDependencyManifests(
             root: graphRoot,
@@ -1232,5 +1235,20 @@ extension Workspace.ManagedDependencies {
                 return false
             }
         })
+    }
+}
+
+extension Array {
+    func concurrentForEach(
+        withPriority priority: TaskPriority? = nil,
+        _ operation: @escaping (Element) async -> Void
+    ) async {
+        await withTaskGroup(of: Void.self) { group in
+            for element in self {
+                group.addTask(priority: priority) {
+                    await operation(element)
+                }
+            }
+        }
     }
 }
